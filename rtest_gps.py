@@ -534,92 +534,29 @@ class RangeTestClient:
         print(f"\n▶ Establishing path to server...")
         self.running = True
         
-        max_wait = self.config['path_establishment_wait']
-        waited = 0
+        # Keep trying to get server destination
         retry_count = 0
-        
-        # Keep retrying path establishment
         while self.server_dest is None:
             time.sleep(0.5)
-            waited += 0.5
             
             if self.server_identity is None:
                 self.server_identity = RNS.Identity.recall(self.server_hash)
                 if self.server_identity:
                     self.create_server_destination()
+                    print("✓ Path established")
+                    break
             
-            # After initial wait, show retry message
-            if waited >= max_wait and self.server_dest is None:
-                retry_count += 1
-                print(f"  ⚠ Server not found, retrying... (attempt #{retry_count})")
-                print(f"    Waiting for server announce...")
-                
-                # Request path again
+            # Request path periodically
+            retry_count += 1
+            if retry_count % 20 == 0:  # Every 10 seconds
+                print(f"  ⚠ Waiting for server... ({retry_count//2}s)")
                 RNS.Transport.request_path(self.server_hash)
-                
-                # Wait another cycle
-                waited = 0
-                time.sleep(2)  # Brief pause between retries
-                
-                # Allow user to cancel with Ctrl+C
-                # After 5 retries, remind user they can cancel
-                if retry_count == 5:
-                    print(f"    💡 Press Ctrl+C to cancel if server is not available")
-        
-        print("✓ Path established")
-        
-        # Test link with initial ping
-        print("\n▶ Testing link...")
-        link_ready = False
-        test_attempts = 0
-        max_test_attempts = 3
-        
-        while not link_ready and test_attempts < max_test_attempts:
-            test_attempts += 1
             
-            # Send test ping
-            test_data = json.dumps({
-                "ping": 0,
-                "from": self.dest.hash.hex()
-            }).encode()
-            
-            try:
-                p = RNS.Packet(self.server_dest, test_data)
-                p.send()
-                print(f"  Sending test ping... (attempt {test_attempts}/{max_test_attempts})")
-                
-                # Wait for response
-                test_start = time.time()
-                self.pings[0] = test_start
-                
-                # Wait up to 10 seconds for test pong
-                while time.time() - test_start < 10:
-                    if 0 not in self.pings:
-                        # Test pong received!
-                        link_ready = True
-                        print("  ✓ Link verified")
-                        break
-                    time.sleep(0.1)
-                
-                if not link_ready:
-                    print(f"  ⚠ No response, retrying...")
-                    if 0 in self.pings:
-                        del self.pings[0]
-                    time.sleep(2)
-            
-            except Exception as e:
-                print(f"  ✗ Test failed: {e}")
-                time.sleep(2)
-        
-        if not link_ready:
-            print("✗ Could not verify link to server")
-            print("  Server may not be responding")
-            print("  Check server is running and reachable")
-            self.running = False
-            return
+            if retry_count == 10:  # After 5 seconds
+                print(f"    💡 Press Ctrl+C to cancel")
         
         if self.config['pre_ping_delay'] > 0:
-            print(f"\n⏱ Waiting {self.config['pre_ping_delay']}s before starting test...")
+            print(f"\n⏱ Waiting {self.config['pre_ping_delay']}s before starting...")
             time.sleep(self.config['pre_ping_delay'])
         
         print(f"\n▶ Starting range test (ping every {self.config['ping_interval']}s)")
