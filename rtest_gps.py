@@ -568,11 +568,61 @@ class RangeTestClient:
         
         print("✓ Path established")
         
+        # Test link with initial ping
+        print("\n▶ Testing link...")
+        link_ready = False
+        test_attempts = 0
+        max_test_attempts = 3
+        
+        while not link_ready and test_attempts < max_test_attempts:
+            test_attempts += 1
+            
+            # Send test ping
+            test_data = json.dumps({
+                "ping": 0,
+                "from": self.dest.hash.hex()
+            }).encode()
+            
+            try:
+                p = RNS.Packet(self.server_dest, test_data)
+                p.send()
+                print(f"  Sending test ping... (attempt {test_attempts}/{max_test_attempts})")
+                
+                # Wait for response
+                test_start = time.time()
+                self.pings[0] = test_start
+                
+                # Wait up to 10 seconds for test pong
+                while time.time() - test_start < 10:
+                    if 0 not in self.pings:
+                        # Test pong received!
+                        link_ready = True
+                        print("  ✓ Link verified")
+                        break
+                    time.sleep(0.1)
+                
+                if not link_ready:
+                    print(f"  ⚠ No response, retrying...")
+                    if 0 in self.pings:
+                        del self.pings[0]
+                    time.sleep(2)
+            
+            except Exception as e:
+                print(f"  ✗ Test failed: {e}")
+                time.sleep(2)
+        
+        if not link_ready:
+            print("✗ Could not verify link to server")
+            print("  Server may not be responding")
+            print("  Check server is running and reachable")
+            self.running = False
+            return
+        
         if self.config['pre_ping_delay'] > 0:
-            print(f"\n⏱ Waiting {self.config['pre_ping_delay']}s before starting...")
+            print(f"\n⏱ Waiting {self.config['pre_ping_delay']}s before starting test...")
             time.sleep(self.config['pre_ping_delay'])
         
-        print(f"▶ Starting range test (ping every {self.config['ping_interval']}s)")
+        print(f"\n▶ Starting range test (ping every {self.config['ping_interval']}s)")
         if self.export_formats:
             print(f"📁 Will export to Downloads on exit")
         print("  Press Ctrl+C to stop\n")
