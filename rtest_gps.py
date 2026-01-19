@@ -473,9 +473,12 @@ class RangeTestClient:
             f.write(html)
     
     def export_to_downloads(self):
-        """Copy files to Downloads folder or prompt save"""
-        if not self.export_formats:
+        """Copy files to Downloads folder with timestamp"""
+        if not self.export_formats and not self.test_data:
             return
+        
+        # Generate timestamp for filenames
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
         # Try to find Downloads folder
         downloads = None
@@ -494,29 +497,36 @@ class RangeTestClient:
         print(f"\n📥 Copying to Downloads...")
         
         file_map = {
-            'csv': 'range_test.csv',
-            'json': 'range_test.json',
-            'geojson': 'range_test.geojson',
-            'kml': 'range_test.kml',
-            'html': 'range_test.html'
+            'csv': ('range_test.csv', f'rtest_{timestamp}.csv'),
+            'json': ('range_test.json', f'rtest_{timestamp}.json'),
+            'geojson': ('range_test.geojson', f'rtest_{timestamp}.geojson'),
+            'kml': ('range_test.kml', f'rtest_{timestamp}.kml'),
+            'html': ('range_test.html', f'rtest_{timestamp}.html')
         }
         
-        formats_to_export = self.export_formats if 'all' not in self.export_formats else file_map.keys()
+        # If no specific formats requested, export all (after Ctrl+C)
+        if not self.export_formats:
+            formats_to_export = file_map.keys()
+        elif 'all' in self.export_formats:
+            formats_to_export = file_map.keys()
+        else:
+            formats_to_export = self.export_formats
         
         for fmt in formats_to_export:
             if fmt == 'all':
                 continue
             
             if fmt in file_map:
-                src = os.path.join(EXPORT_DIR, file_map[fmt])
-                dst = os.path.join(downloads, file_map[fmt])
+                src_name, dst_name = file_map[fmt]
+                src = os.path.join(EXPORT_DIR, src_name)
+                dst = os.path.join(downloads, dst_name)
                 
                 if os.path.exists(src):
                     try:
                         shutil.copy2(src, dst)
-                        print(f"  ✓ {file_map[fmt]}")
+                        print(f"  ✓ {dst_name}")
                     except Exception as e:
-                        print(f"  ✗ {file_map[fmt]}: {e}")
+                        print(f"  ✗ {dst_name}: {e}")
         
         print(f"📁 Saved to: {downloads}")
     
@@ -526,7 +536,10 @@ class RangeTestClient:
         
         max_wait = self.config['path_establishment_wait']
         waited = 0
-        while self.server_dest is None and waited < max_wait:
+        retry_count = 0
+        
+        # Keep retrying path establishment
+        while self.server_dest is None:
             time.sleep(0.5)
             waited += 0.5
             
@@ -534,11 +547,24 @@ class RangeTestClient:
                 self.server_identity = RNS.Identity.recall(self.server_hash)
                 if self.server_identity:
                     self.create_server_destination()
-        
-        if self.server_dest is None:
-            print("✗ Could not establish path to server")
-            self.running = False
-            return
+            
+            # After initial wait, show retry message
+            if waited >= max_wait and self.server_dest is None:
+                retry_count += 1
+                print(f"  ⚠ Server not found, retrying... (attempt #{retry_count})")
+                print(f"    Waiting for server announce...")
+                
+                # Request path again
+                RNS.Transport.request_path(self.server_hash)
+                
+                # Wait another cycle
+                waited = 0
+                time.sleep(2)  # Brief pause between retries
+                
+                # Allow user to cancel with Ctrl+C
+                # After 5 retries, remind user they can cancel
+                if retry_count == 5:
+                    print(f"    💡 Press Ctrl+C to cancel if server is not available")
         
         print("✓ Path established")
         
@@ -547,6 +573,8 @@ class RangeTestClient:
             time.sleep(self.config['pre_ping_delay'])
         
         print(f"▶ Starting range test (ping every {self.config['ping_interval']}s)")
+        if self.export_formats:
+            print(f"📁 Will export to Downloads on exit")
         print("  Press Ctrl+C to stop\n")
         
         try:
@@ -560,10 +588,13 @@ class RangeTestClient:
                 time.sleep(self.config['ping_interval'])
         except KeyboardInterrupt:
             print(f"\n⏹ Done: {self.success}/{self.count}")
-            print(f"📁 Logs saved in: {EXPORT_DIR}/")
+            if self.test_data:
+                print(f"📁 Logs in: {EXPORT_DIR}/ ({len(self.test_data)} GPS entries)")
+            else:
+                print(f"⚠ No GPS data recorded")
             
-            # Export to Downloads if requested
-            if self.export_formats:
+            # Always export to Downloads on Ctrl+C (with timestamp)
+            if self.test_data:
                 self.export_to_downloads()
             
             self.running = False
