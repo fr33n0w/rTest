@@ -1,6 +1,7 @@
 # rTest v0.1
 # Standalone Reticulum RNode Range Test System
 
+# UNFINISHED SCRIPTS - WORK IN PROGRESS - DON'T TRY IT; NOT WORKING!
 
 **Reticulum Range Testing Tool with GPS Mapping**
 
